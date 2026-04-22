@@ -22,6 +22,18 @@ st.markdown(
         color: #006FB3;
         font-weight: 700;
     }
+    .provisional-badge {
+        display: inline-block;
+        margin: 0.15rem 0 0.6rem 0;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: #FFF3CD;
+        border: 1px solid #F2C94C;
+        color: #7A4D00;
+        font-size: 0.9rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -417,6 +429,15 @@ def to_excel_bytes(df: pd.DataFrame, quality_df: pd.DataFrame | None = None) -> 
     return buffer.getvalue()
 
 
+def render_provisional_badge():
+    st.markdown(
+        """
+        <div class="provisional-badge">Datos Provisorios</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 detail_df, detail_path = load_detail()
 regional_df, regional_path = load_regional()
 
@@ -424,6 +445,7 @@ valid_detail_df = detail_df[detail_df["valid_denom"]].copy()
 invalid_detail_df = detail_df[~detail_df["valid_denom"]].copy()
 
 st.title("Dashboard Coberturas Vacunas Programáticas")
+render_provisional_badge()
 st.caption("Año 2024. Vista de coberturas regionales y comunales basada en los outputs consolidados del programa.")
 
 with st.sidebar:
