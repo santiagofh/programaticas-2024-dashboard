@@ -19,9 +19,6 @@ Thumbs.db
 # Secrets
 .streamlit/secrets.toml
 
-# Generated outputs
-output/
-
 # Raw input data (confidential)
 data/
 
