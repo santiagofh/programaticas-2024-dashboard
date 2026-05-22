@@ -35,3 +35,4 @@ ocu_*.xlsx
 # Source data spreadsheets in root (confidential)
 *.xls
 *.xlsx
+!output/*.xlsx
