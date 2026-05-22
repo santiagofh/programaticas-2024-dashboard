@@ -20,17 +20,13 @@ VACUNAS INCLUIDAS:
   Personas mayores  : Neumocócica Polisacárida (65 años)
 
 NOTA METODOLÓGICA COBERTURAS ESCOLARES:
-  Para este reporte se unifica la comuna de cálculo usando
-  COD_COMUNA_RESID también en escolares (tratando residencia
-  como comuna de ocurrencia). De esta forma queda una sola
-  comuna de cálculo por registro.
+  Las vacunas escolares se identifican por CRITERIO_ELEGIBILIDAD
+  del RNI y se agregan por COD_COMUNA_OCURR.
 =============================================================
 """
 
 import pandas as pd
 import numpy as np
-import os
-from glob import glob
 from pathlib import Path
 from datetime import date
 
@@ -43,10 +39,15 @@ DIR_OUTPUT.mkdir(exist_ok=True)
 T = 2024
 RUN_DATE = date.today().isoformat()
 
+# — CONFIGURAR RUTA LOCAL —
+# RUTA_BASE_RNI = Path("ruta/a/tus/datos/RNI/PROGRAMATICAS")
+# Ejemplo local:
+# RUTA_BASE_RNI = Path(r"D:\DATA\RNI\PROGRAMATICAS")
+RUTA_BASE_RNI = Path("data")
 RUTAS_AÑOS = {
-    T:   r"C:\Users\fariass\OneDrive - SUBSECRETARIA DE SALUD PUBLICA\Escritorio\DATA\RNI\PROGRAMATICAS\2024",
-    T+1: r"C:\Users\fariass\OneDrive - SUBSECRETARIA DE SALUD PUBLICA\Escritorio\DATA\RNI\PROGRAMATICAS\2025",
-    T+2: r"C:\Users\fariass\OneDrive - SUBSECRETARIA DE SALUD PUBLICA\Escritorio\DATA\RNI\PROGRAMATICAS\2026",
+    T:   RUTA_BASE_RNI / f"Programaticas_{T}.csv",
+    T+1: RUTA_BASE_RNI / f"Programaticas_{T+1}.csv",
+    T+2: RUTA_BASE_RNI / f"Programaticas_{T+2}.csv",
 }
 
 # ─────────────────────────────────────────────
@@ -75,6 +76,7 @@ COHORTES_ESCOLAR = {
     "5basico": ("2013-01-01", "2014-06-30"),   # nacidos ~2013-2014
     "8basico": ("2009-07-01", "2011-06-30"),   # nacidos ~2010
 }
+# 22-05-2026 - NO SE CONSIDERA CORTES DE AÑOS 
 
 # ─────────────────────────────────────────────
 # 3. COLUMNAS
@@ -92,27 +94,45 @@ COLUMNAS = [
     "SEXO",
     "FECHA_NACIMIENTO",
     "FECHA_INMUNIZACION",
+    "SEMANA_GESTACIONAL",
 ]
 
 # ─────────────────────────────────────────────
 # 4. CARGA MULTI-AÑO
 # ─────────────────────────────────────────────
 def cargar_y_filtrar(path):
-    df = pd.read_csv(
-        path, encoding="LATIN1", sep="|",
-        usecols=COLUMNAS, low_memory=False,
-    )
-    df = df[
-        df["COD_COMUNA_RESID"].between(13000, 13999) &
-        (df["VACUNA_ADMINISTRADA"] == "SI") &
-        (df["REGISTRO_ELIMINADO"] == "NO") &
-        (df["CRITERIO_ELEGIBILIDAD"] != "EPRO") &
-        (~df["DOSIS"].str.contains("EPRO", case=False, na=False))
-    ]
+    chunks = []
+
+    for chunk in pd.read_csv(
+        path,
+        encoding="LATIN1",
+        sep="|",
+        usecols=COLUMNAS,
+        low_memory=False,
+        chunksize=500000,
+    ):
+
+        resid_rm = chunk["COD_COMUNA_RESID"].between(13000, 13999)
+        ocurr_rm = chunk["COD_COMUNA_OCURR"].between(13000, 13999)
+
+        chunk = chunk[
+            (resid_rm | ocurr_rm) &
+            (chunk["VACUNA_ADMINISTRADA"] == "SI") &
+            (chunk["REGISTRO_ELIMINADO"] == "NO") &
+            (chunk["CRITERIO_ELEGIBILIDAD"] != "EPRO") &
+            (~chunk["DOSIS"].str.contains("EPRO", case=False, na=False))
+        ]
+
+        chunks.append(chunk)
+
+    df = pd.concat(chunks, ignore_index=True)
+
     duplicados = df[df.duplicated("ID_INMUNIZACION", keep=False)]
     if len(duplicados) > 0:
         print(f"    ⚠ Duplicados ID_INM: {len(duplicados)}")
+
     df = df.drop_duplicates("ID_INMUNIZACION")
+
     return df
 
 AÑOS_DISPONIBLES = []
@@ -123,20 +143,12 @@ print(f"  CARGANDO DATOS PARA COHORTE t={T}")
 print("=" * 55)
 
 for anio, ruta in RUTAS_AÑOS.items():
-    archivos = glob(os.path.join(ruta, "*.csv"))
-    archivos = [f for f in archivos if not os.path.basename(f).startswith("~")]
-
-    if not os.path.exists(ruta):
-        print(f"  [{anio}] ⏭  Carpeta no encontrada — se omite")
-        continue
-    if not archivos:
-        print(f"  [{anio}] ⏭  Carpeta vacía — se omite")
+    if not ruta.exists():
+        print(f"  [{anio}] ⏭  Archivo no encontrado — se omite")
         continue
 
-    print(f"\n  [{anio}] ✓ {len(archivos)} archivo(s) encontrado(s)")
-    for archivo in archivos:
-        print(f"    Leyendo {os.path.basename(archivo)}...")
-        lista_df.append(cargar_y_filtrar(archivo))
+    print(f"\n  [{anio}] ✓ Cargando {ruta.name}...")
+    lista_df.append(cargar_y_filtrar(ruta))
     AÑOS_DISPONIBLES.append(anio)
 
 if not lista_df:
@@ -212,6 +224,23 @@ df["VAC"] = (
     .str.strip()
 )
 
+def normalizar_texto(serie):
+    return (
+        serie.fillna("")
+        .astype(str)
+        .str.upper()
+        .str.normalize("NFKD")
+        .str.encode("ascii", errors="ignore")
+        .str.decode("ascii")
+        .str.upper()
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
+
+df["CRITERIO_NORM"] = normalizar_texto(df["CRITERIO_ELEGIBILIDAD"])
+df["SEXO_NORM"] = normalizar_texto(df["SEXO"])
+df["SEMANA_GESTACIONAL_NUM"] = pd.to_numeric(df["SEMANA_GESTACIONAL"], errors="coerce")
+
 # ─────────────────────────────────────────────
 # 8. HELPERS
 # ─────────────────────────────────────────────
@@ -225,25 +254,77 @@ def en_cohorte_escolar(grado):
 
 # ─────────────────────────────────────────────
 # 9. INICIALIZAR COLUMNAS DE CLASIFICACIÓN
-#    COD_COMUNA_JOIN: por defecto = residencia
-#    En escolares se mantiene residencia (unificación de comuna)
+#    En escolares solo usar ocurrencia
 # ─────────────────────────────────────────────
 df["CLAVE_DENOMINADOR"] = None
 df["VACUNA_DASHBOARD"]  = None
-df["COD_COMUNA_JOIN"]   = df["COD_COMUNA_RESID"]   # default = residencia
+df["COD_COMUNA_JOIN"] = pd.NA
 
 def asignar(mascara, clave, etiqueta):
-    """Vacunas regulares: join por RESIDENCIA (default)."""
-    df.loc[mascara, "CLAVE_DENOMINADOR"] = clave
-    df.loc[mascara, "VACUNA_DASHBOARD"]  = etiqueta
-    # COD_COMUNA_JOIN ya es COD_COMUNA_RESID — no se modifica
+    """Vacunas regulares: join por residencia."""
+    mascara = mascara.fillna(False)
+    traslape = mascara & df["VACUNA_DASHBOARD"].notna()
+    if traslape.any():
+        print(f"⚠ Regla '{etiqueta}' traslapa {traslape.sum():,} registros ya clasificados; no se sobreescriben")
+    mascara_final = mascara & df["VACUNA_DASHBOARD"].isna()
+    df.loc[mascara_final, "CLAVE_DENOMINADOR"] = clave
+    df.loc[mascara_final, "VACUNA_DASHBOARD"]  = etiqueta
+    df.loc[mascara_final, "COD_COMUNA_JOIN"]   = df.loc[mascara_final, "COD_COMUNA_RESID"]
 
 def asignar_escolar(mascara, clave, etiqueta):
-    """Vacunas escolares: comuna unificada = residencia."""
-    df.loc[mascara, "CLAVE_DENOMINADOR"] = clave
-    df.loc[mascara, "VACUNA_DASHBOARD"]  = etiqueta
-    # COD_COMUNA_JOIN se mantiene en COD_COMUNA_RESID
+    """Vacunas escolares: join por comuna de ocurrencia."""
+    mascara = mascara.fillna(False)
+    traslape = mascara & df["VACUNA_DASHBOARD"].notna()
+    if traslape.any():
+        print(f"⚠ Regla '{etiqueta}' traslapa {traslape.sum():,} registros ya clasificados; no se sobreescriben")
+    mascara_final = mascara & df["VACUNA_DASHBOARD"].isna()
+    df.loc[mascara_final, "CLAVE_DENOMINADOR"] = clave
+    df.loc[mascara_final, "VACUNA_DASHBOARD"]  = etiqueta
+    df.loc[mascara_final, "COD_COMUNA_JOIN"]   = df.loc[mascara_final, "COD_COMUNA_OCURR"]
 
+CRITERIOS_ESCOLARES = {
+    "1basico": [
+        "1° básico (Est. De Salud)",
+        "1° básico (Est. Educacional)",
+    ],
+    "4basico": [
+        "4º básico (Est. de Salud)",
+        "4º básico (Est. Educacional)",
+    ],
+    "5basico": [
+        "5º básico",
+        "5º básico (Est. de Salud)",
+        "5º básico (Est. Educacional)",
+        "5º básico (Est. de Salud)",
+        "5º básico (Est. Educacional)"
+
+    ],
+    "8basico": [
+        "8° básico (Est. De Salud)",
+        "8° básico (Est. Educacional)",
+    ],
+    "vph_pendientes": [
+        # "6º básico dosis pendiente",
+        # "7º básico dosis pendiente",
+        # "8º básico dosis pendiente",
+    ],
+    "8basico_pendiente": [
+        # "8º básico dosis pendiente",
+    ],
+}
+
+CRITERIOS_ESCOLARES_NORM = {
+    clave: set(normalizar_texto(pd.Series(valores)))
+    for clave, valores in CRITERIOS_ESCOLARES.items()
+}
+
+def criterio_escolar(clave):
+    return df["CRITERIO_NORM"].isin(CRITERIOS_ESCOLARES_NORM[clave])
+
+criterio_embarazada = (
+    df["CRITERIO_NORM"].str.contains(r"\bEMBARAZADAS?\b", na=False) |
+    (df["SEMANA_GESTACIONAL_NUM"] >= 28)
+)
 # ─────────────────────────────────────────────
 # 10. CLASIFICACIÓN VACUNAS INFANTILES / LACTANTES
 # ─────────────────────────────────────────────
@@ -382,15 +463,15 @@ asignar(
 
 # ─────────────────────────────────────────────
 # 11. CLASIFICACIÓN VACUNAS ESCOLARES
-#     Comuna unificada = residencia (según instrucción de reporte)
-#     Ventana de nacimiento define el grado esperado en 2024
+#     Se separan por CRITERIO_ELEGIBILIDAD para evitar que 1°, 4°, 5°
+#     y 8° básico se pisen entre sí.
 # ─────────────────────────────────────────────
 
 # ── dTpa 1° BÁSICO ────────────────────────────────────────────────────────────
 # Refuerzo en escolares de 1° básico (~6-7 años en 2024)
 asignar_escolar(
     df["VAC"].str.contains("DTPA|TDPA", case=False) &
-    en_cohorte_escolar("1basico") &
+    criterio_escolar("1basico") &
     (df["FECHA_INMUNIZACION"].dt.year == T),  # solo vacunados en año t (escolar no t+1/t+2)
     "dTpa_1basico", "VACUNA DTPA 1 BASICO",
 )
@@ -398,7 +479,7 @@ asignar_escolar(
 # ── dTpa 8° BÁSICO ────────────────────────────────────────────────────────────
 asignar_escolar(
     df["VAC"].str.contains("DTPA|TDPA", case=False) &
-    en_cohorte_escolar("8basico") &
+    (criterio_escolar("8basico")) &
     (df["FECHA_INMUNIZACION"].dt.year == T),
     "dTpa_8basico", "VACUNA DTPA 8 BASICO",
 )
@@ -410,19 +491,20 @@ asignar_escolar(
 # Ambas se capturan con el mismo denominador (matriculados 4° básico)
 asignar_escolar(
     df["VAC"].str.contains("VPH|PAPILOMA|GARDASIL|CERVARIX|SILGARD", case=False) &
-    (df["DOSIS_NORM"].isin(["DOSIS_UNICA", "1RA_DOSIS"])) &
-    en_cohorte_escolar("4basico") &
+    # (df["DOSIS_NORM"].isin(["DOSIS_UNICA", "1RA_DOSIS"])) &
+    criterio_escolar("4basico") &
     (df["FECHA_INMUNIZACION"].dt.year == T),
     "VPH_4basico", "VACUNA VPH 4 BASICO",
 )
+
 
 # ── VPH 5° BÁSICO — 2da dosis tetravalente (completando esquema 2023) ─────────
 # Solo aplica en 2024: escolares de 5° básico que recibieron 1° dosis en 2023
 # A partir de 2025 este grupo ya no existe (solo queda 4° básico nonavalente)
 asignar_escolar(
     df["VAC"].str.contains("VPH|PAPILOMA|GARDASIL|CERVARIX|SILGARD", case=False) &
-    (df["DOSIS_NORM"] == "2DA_DOSIS") &
-    en_cohorte_escolar("5basico") &
+    # (df["DOSIS_NORM"] == "2DA_DOSIS") &
+    (criterio_escolar("5basico")) &
     (df["FECHA_INMUNIZACION"].dt.year == T),
     "VPH_5basico", "VACUNA VPH 5 BASICO",
 )
@@ -435,7 +517,8 @@ asignar_escolar(
 # ─────────────────────────────────────────────
 asignar(
     df["VAC"].str.contains("DTPA|TDPA", case=False) &
-    df["FECHA_NACIMIENTO"].dt.year.between(1975, 2008) &
+    df["SEXO_NORM"].isin(["MUJER", "FEMENINA"]) &
+    criterio_embarazada &
     (df["FECHA_INMUNIZACION"].dt.year == T),
     "dTpa_Gestantes", "VACUNA DTPA GESTANTES",
 )
@@ -489,6 +572,12 @@ sin_identificacion = df_final["IDENTIFICACION_FINAL"].isna().sum()
 if sin_identificacion > 0:
     print(f"\n⚠ Registros clasificados sin identificación válida: {sin_identificacion:,} — se omiten")
 df_final = df_final[df_final["IDENTIFICACION_FINAL"].notna()].copy()
+
+df_final["COD_COMUNA_JOIN"] = pd.to_numeric(df_final["COD_COMUNA_JOIN"], errors="coerce").astype("Int64")
+fuera_rm = df_final[~df_final["COD_COMUNA_JOIN"].between(13000, 13999)]
+if not fuera_rm.empty:
+    print(f"\n⚠ Registros clasificados con comuna de cálculo fuera de RM: {len(fuera_rm):,} — se omiten")
+df_final = df_final[df_final["COD_COMUNA_JOIN"].between(13000, 13999)].copy()
 
 cols_duplicado = ["IDENTIFICACION_FINAL", "VACUNA_DASHBOARD"]
 duplicados_unicos_programaticas = (

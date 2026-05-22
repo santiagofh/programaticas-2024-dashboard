@@ -44,14 +44,14 @@ python 3_calcular_coberturas_2024.py
 | **RNI** (Registro Nacional de Inmunizaciones) | Vacunas administradas 2024–2026 | Script 1 |
 | **SRCeI** (Registro Civil) | Nacidos vivos inscritos 2021–2024 | Script 2 — nacimientos |
 | **INE** Proyecciones 2002–2035 por comuna | Población 65 años 2024 | Script 2 — personas mayores |
-| **Mineduc** Matrícula por Curso 2024 | Matrícula 1°, 4°, 5°, 8° básico RM | Script 2 — escolar |
+| **Población Escolar 2024** (SEREMI/MINEDUC) | Matrícula 1°, 4°, 5°, 8° básico RM (pre-calculada) | Script 2 — escolar |
 
 **Rutas de archivos (configurar en cada script):**
 ```
 DATA/RNI/PROGRAMATICAS/2024–2026/          → Script 1
 DATA/NACIMIENTO/2021–2024/NAC<año>.csv     → Script 2
 data/estimaciones-y-proyecciones-...csv    → Script 2
-data/20241003_Resumen_Matrícula_Curso_...  → Script 2
+data/Poblacion Escolar 2024.xlsx            → Script 2 (pre-calculado MINEDUC)
 ```
 
 ---

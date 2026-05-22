@@ -74,7 +74,7 @@ except FileNotFoundError:
         print("Cargando denominador gestantes (legado)...")
         denom_gestantes = pd.read_csv(ruta_gestantes, encoding="utf-8-sig")
     else:
-        print("ℹ  denominador_gestantes_2024.csv no encontrado — dTpa gestantes se omite del cálculo")
+        print("INFO: denominador_gestantes_2024.csv no encontrado - dTpa gestantes se omite del calculo")
 
 # ─────────────────────────────────────────────
 # 3. CLAVE DE JOIN
@@ -169,9 +169,9 @@ claves_num = set(numerador["CLAVE_DEN"].unique())
 claves_den = set(denominador_long["CLAVE_DEN"].unique())
 sin_den = claves_num - claves_den
 if sin_den:
-    print(f"\n⚠ Claves del numerador SIN denominador: {sin_den}")
+    print(f"\nALERTA: Claves del numerador SIN denominador: {sin_den}")
 else:
-    print("\n✓ Todas las claves del numerador tienen denominador")
+    print("\nOK Todas las claves del numerador tienen denominador")
 
 # ─────────────────────────────────────────────
 # 5. JOIN numerador + denominador
@@ -196,7 +196,7 @@ coberturas["PORC_COBERTURA"] = coberturas["PORC_COBERTURA"].fillna(0)
 
 sin_denom = coberturas[coberturas["POBLACION_OBJETIVO"].isna()]
 if not sin_denom.empty:
-    print(f"\n⚠ Registros sin denominador: {len(sin_denom)}")
+    print(f"\nALERTA: Registros sin denominador: {len(sin_denom)}")
     print(sin_denom[["COD_COMUNA_JOIN", "VACUNA_DASHBOARD",
                       "CLAVE_DENOMINADOR"]].drop_duplicates().to_string(index=False))
 
@@ -255,16 +255,17 @@ print("=" * 70)
 print("\n=== ALERTAS ===")
 for _, row in resumen_regional.iterrows():
     if row["PORC_COBERTURA"] > 105:
-        print(f"⚠ SUPERA 105%: {row['VACUNA_DASHBOARD']} → {row['PORC_COBERTURA']}%")
+        print(f"ALERTA SUPERA 105%: {row['VACUNA_DASHBOARD']} -> {row['PORC_COBERTURA']}%")
     if row["PORC_COBERTURA"] < 20:
-        print(f"ℹ MUY BAJA: {row['VACUNA_DASHBOARD']} → {row['PORC_COBERTURA']}% "
+        print(f"INFO MUY BAJA: {row['VACUNA_DASHBOARD']} -> {row['PORC_COBERTURA']}% "
               f"(verificar si vacuna fue incorporada recientemente al PNI o si hay pocos datos)")
 
 # ─────────────────────────────────────────────
 # 9. GUARDAR — CSV + Excel con dos pestañas
 # ─────────────────────────────────────────────
-nombre_cob_csv = f"{RUN_DATE}_coberturas_vacunas_2024.csv"
-nombre_cob_xlsx = f"{RUN_DATE}_coberturas_vacunas_2024.xlsx"
+OUTPUT_PREFIX = RUN_DATE
+nombre_cob_csv = f"{OUTPUT_PREFIX}_coberturas_vacunas_2024.csv"
+nombre_cob_xlsx = f"{OUTPUT_PREFIX}_coberturas_vacunas_2024.xlsx"
 
 coberturas.to_csv(
     DIR_OUTPUT / nombre_cob_csv,
@@ -277,7 +278,7 @@ with pd.ExcelWriter(
     coberturas.to_excel(writer, sheet_name="Por_Comuna", index=False)
     resumen_regional.to_excel(writer, sheet_name="Resumen_Regional", index=False)
 
-print(f"\n✓ Guardado en: {DIR_OUTPUT}")
+print(f"\nOK Guardado en: {DIR_OUTPUT}")
 print(f"  - {nombre_cob_csv}")
 print(f"  - {nombre_cob_xlsx}  (pestañas: Por_Comuna / Resumen_Regional)")
 # %%

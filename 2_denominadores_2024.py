@@ -25,15 +25,20 @@ from datetime import date
 # ─────────────────────────────────────────────
 # 1. RUTAS
 # ─────────────────────────────────────────────
-BASE_NAC  = Path(r"C:\Users\fariass\OneDrive - SUBSECRETARIA DE SALUD PUBLICA\Escritorio\DATA\NACIMIENTO")
+# — CONFIGURAR RUTA LOCAL —
+# RUTA_BASE_NAC = Path("ruta/a/tus/datos/NACIMIENTO")
+# Ejemplo local:
+# RUTA_BASE_NAC = Path(r"C:\Users\...\DATA\NACIMIENTO")
+RUTA_BASE_NAC = Path("data/nacimientos")
 RUTA_INE  = Path(r"data/estimaciones-y-proyecciones-2002-2035-comunas(Est. y Proy. de Pob.csv")
-RUTA_MIN  = Path(r"data/20241003_Resumen_Matrícula_Curso_2024_20240430_PUBL.csv")
+# RUTA_MIN  = Path(r"data/20241003_Resumen_Matrícula_Curso_2024_20240430_PUBL.csv")  # LEGACY
+RUTA_POB_ESC = Path(r"data/Poblacion Escolar 2024.xlsx")  # Población Escolar MINEDUC (pre-calculada)
 
 RUTAS_NAC = {
-    2021: BASE_NAC / "2021" / "NAC2021.csv",
-    2022: BASE_NAC / "2022" / "NAC2022.csv",
-    2023: BASE_NAC / "2023" / "NAC2023.csv",
-    2024: BASE_NAC / "2024" / "NAC2024.csv",
+    2021: RUTA_BASE_NAC / "2021" / "NAC2021.csv",
+    2022: RUTA_BASE_NAC / "2022" / "NAC2022.csv",
+    2023: RUTA_BASE_NAC / "2023" / "NAC2023.csv",
+    2024: RUTA_BASE_NAC / "2024" / "NAC2024.csv",
 }
 
 DIR_OUTPUT = Path(__file__).parent / "output"
@@ -145,7 +150,7 @@ nombre_nac_xlsx = f"{RUN_DATE}_denominador_nacimientos_2024.xlsx"
 comunas.to_csv(DIR_OUTPUT / nombre_nac_csv, index=False, encoding="utf-8-sig")
 col_rename = {k: v[3] for k, v in COHORTES_NAC.items()}
 comunas.rename(columns=col_rename).to_excel(DIR_OUTPUT / nombre_nac_xlsx, index=False)
-print(f"\n  ✓ denominador_nacimientos_2024.csv guardado ({len(comunas)} comunas)")
+print(f"\n  OK denominador_nacimientos_2024.csv guardado ({len(comunas)} comunas)")
 
 # ═══════════════════════════════════════════════════════
 # B) DENOMINADOR INE 65 AÑOS — Neumocócica Polisacárida
@@ -195,59 +200,73 @@ nombre_65_csv = f"{RUN_DATE}_denominador_neumococica_65_2024.csv"
 nombre_65_xlsx = f"{RUN_DATE}_denominador_neumococica_65_2024.xlsx"
 denom_65.to_csv(DIR_OUTPUT / nombre_65_csv, index=False, encoding="utf-8-sig")
 denom_65.to_excel(DIR_OUTPUT / nombre_65_xlsx, index=False)
-print(f"  ✓ denominador_neumococica_65_2024.csv guardado ({len(denom_65)} comunas)")
+print(f"  OK denominador_neumococica_65_2024.csv guardado ({len(denom_65)} comunas)")
+
+# ═══════════════════════════════════════════════════════
+# Mapeo comuna nombre → código (RM)
+# ═══════════════════════════════════════════════════════
+
+COMUNA_MAP = {
+    # Provincia de Santiago (13101-13132)
+    "Santiago": 13101, "Cerrillos": 13102, "Cerro Navia": 13103,
+    "Conchalí": 13104, "El Bosque": 13105, "Estación Central": 13106,
+    "Huechuraba": 13107, "Independencia": 13108, "La Cisterna": 13109,
+    "La Florida": 13110, "La Granja": 13111, "La Pintana": 13112,
+    "La Reina": 13113, "Las Condes": 13114, "Lo Barnechea": 13115,
+    "Lo Espejo": 13116, "Lo Prado": 13117, "Macul": 13118,
+    "Maipú": 13119, "Ñuñoa": 13120, "Pedro Aguirre Cerda": 13121,
+    "Peñalolén": 13122, "Providencia": 13123, "Pudahuel": 13124,
+    "Quilicura": 13125, "Quinta Normal": 13126, "Recoleta": 13127,
+    "Renca": 13128, "San Joaquín": 13129, "San Miguel": 13130,
+    "San Ramón": 13131, "Vitacura": 13132,
+    # Provincia de Cordillera (13201-13203)
+    "Puente Alto": 13201, "Pirque": 13202, "San José de Maipo": 13203,
+    # Provincia de Chacabuco (13301-13303)
+    "Colina": 13301, "Lampa": 13302, "Tiltil": 13303,
+    # Provincia de Maipo (13401-13404)
+    "San Bernardo": 13401, "Buin": 13402, "Calera De Tango": 13403,
+    "Paine": 13404,
+    # Provincia de Melipilla (13501-13505)
+    "Melipilla": 13501, "Alhué": 13502, "Curacavi": 13503,
+    "María Pinto": 13504, "San Pedro": 13505,
+    # Provincia de Talagante (13601-13605)
+    "Talagante": 13601, "El Monte": 13602, "Isla De Maipo": 13603,
+    "Padre Hurtado": 13604, "Peñaflor": 13605,
+}
 
 # ═══════════════════════════════════════════════════════
 # C) DENOMINADOR MATRÍCULA ESCOLAR — dTpa y VPH
+#    Fuente: Población Escolar 2024 (pre-calculada por MINEDUC)
 # ═══════════════════════════════════════════════════════
 
 print("\n" + "=" * 65)
-print("C) DENOMINADOR MATRÍCULA ESCOLAR")
+print("C) DENOMINADOR MATRÍCULA ESCOLAR (Población Escolar 2024)")
 print("=" * 65)
 
-df_min = pd.read_csv(
-    RUTA_MIN, sep=";", encoding="latin1", low_memory=False,
-    usecols=["AGNO", "COD_REG_RBD", "COD_COM_RBD", "NOM_COM_RBD",
-             "COD_ENSE", "COD_ENSE2", "COD_GRADO", "ESTADO_ESTAB", "N_ALU"]
-)
-print(f"  Registros totales: {len(df_min):,}")
+df_esc = pd.read_excel(RUTA_POB_ESC, header=None)
+print(f"  Filas: {len(df_esc)}")
 
-df_min = df_min[
-    (df_min["COD_REG_RBD"] == 13) &
-    (df_min["COD_ENSE"] == 110) &
-    (df_min["ESTADO_ESTAB"] == 1) &
-    (df_min["COD_GRADO"].isin([1, 4, 5, 8]))
-].copy()
-print(f"  RM básica regular grados 1/4/5/8: {len(df_min):,}")
-
-df_min["N_ALU"] = pd.to_numeric(df_min["N_ALU"], errors="coerce").fillna(0).astype(int)
-
-matricula = (
-    df_min.groupby(["COD_COM_RBD", "NOM_COM_RBD", "COD_GRADO"])["N_ALU"]
-    .sum().reset_index()
-)
-
-mat_wide = matricula.pivot_table(
-    index=["COD_COM_RBD", "NOM_COM_RBD"],
-    columns="COD_GRADO", values="N_ALU",
-    aggfunc="sum", fill_value=0
-).reset_index()
-
-mat_wide.columns.name = None
-mat_wide = mat_wide.rename(columns={
-    "COD_COM_RBD": "COMUNA_N",
-    "NOM_COM_RBD": "COMUNA",
-    1: "dTpa_1basico",
-    4: "VPH_4basico",
-    5: "VPH_5basico",
-    8: "dTpa_8basico",
-})
+# Estructura del Excel:
+#   Row(iloc 5) = "Region Metropolitana" (total regional)
+#   Rows(iloc 6-57) = 52 comunas RM
+#   Col 0 = nombre comuna | Col 1-4 = MATRICULA 1°/4°/5°/8° básico
+data = df_esc.iloc[6:58, [0, 1, 2, 3, 4]].copy()
+data.columns = ["COMUNA", "dTpa_1basico", "VPH_4basico", "VPH_5basico", "dTpa_8basico"]
+data = data.dropna(subset=["COMUNA"])
+data["COMUNA"] = data["COMUNA"].astype(str).str.strip()
 
 for col in ["dTpa_1basico", "VPH_4basico", "VPH_5basico", "dTpa_8basico"]:
-    if col not in mat_wide.columns:
-        mat_wide[col] = 0
+    data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0).astype(int)
 
-mat_wide = mat_wide[["COMUNA_N", "COMUNA", "dTpa_1basico", "VPH_4basico", "VPH_5basico", "dTpa_8basico"]]    .sort_values("COMUNA_N").reset_index(drop=True)
+data["COMUNA_N"] = data["COMUNA"].map(COMUNA_MAP)
+unmapped = data[data["COMUNA_N"].isna()]["COMUNA"].unique()
+if len(unmapped):
+    print(f"  ⚠ Comunas sin mapear: {unmapped}")
+data = data.dropna(subset=["COMUNA_N"])
+data["COMUNA_N"] = data["COMUNA_N"].astype(int)
+
+mat_wide = data[["COMUNA_N", "COMUNA", "dTpa_1basico", "VPH_4basico", "VPH_5basico", "dTpa_8basico"]]
+mat_wide = mat_wide.sort_values("COMUNA_N").reset_index(drop=True)
 
 print(f"  dTpa 1° básico   : {mat_wide['dTpa_1basico'].sum():,}")
 print(f"  VPH  4° básico   : {mat_wide['VPH_4basico'].sum():,}")
@@ -258,13 +277,13 @@ nombre_mat_csv = f"{RUN_DATE}_denominador_matricula_escolar_2024.csv"
 nombre_mat_xlsx = f"{RUN_DATE}_denominador_matricula_escolar_2024.xlsx"
 mat_wide.to_csv(DIR_OUTPUT / nombre_mat_csv, index=False, encoding="utf-8-sig")
 mat_wide.to_excel(DIR_OUTPUT / nombre_mat_xlsx, index=False)
-print(f"  ✓ denominador_matricula_escolar_2024.csv guardado ({len(mat_wide)} comunas)")
+print(f"  OK denominador_matricula_escolar_2024.csv guardado ({len(mat_wide)} comunas)")
 
 # ═══════════════════════════════════════════════════════
 # RESUMEN FINAL
 # ═══════════════════════════════════════════════════════
 print("\n" + "=" * 65)
-print("✓ TODOS LOS DENOMINADORES GUARDADOS EN: output/")
+print("OK TODOS LOS DENOMINADORES GUARDADOS EN: output/")
 print("=" * 65)
 print(f"  {nombre_nac_csv}")
 print(f"  {nombre_65_csv}")
